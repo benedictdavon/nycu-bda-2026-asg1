@@ -13,8 +13,10 @@ Original work:
 
 - ```finetune_q1-q3.ipynb```: File for Question 1 to Question 3 in Assignment 1.
 - ```finetune_q4.ipynb```: File for Question 4 in Assignment 1.
+- `results_analysis.ipynb`: Reads the saved results and creates the report tables and plots.
 
-The two ```.ipynb``` files can be run independently.
+The two experiment notebooks can be run independently. The analysis notebook
+reads their saved results.
 
 ## Code Description
 
@@ -168,7 +170,7 @@ For MATH, answers are first normalized using the PiSSA evaluation method, then a
 Results are written to:
 
 ```text
-/kaggle/working/pissa_benchmark
+/kaggle/working/Assignment1
 ```
 
 ## How to Run ```finetune_q1-q3.ipynb``` on Kaggle
@@ -177,6 +179,8 @@ Results are written to:
 
 Open the notebook in Kaggle and enable a GPU accelerator.  
 Two T4 GPUs can be used through `DataParallel`, but the code also runs with one CUDA GPU.
+Enable Internet too. The notebook uses Kaggle's Python environment with PyTorch,
+Transformers, datasets, accelerate, huggingface_hub, NumPy, pandas, and tqdm.
 
 ### 2. Add Hugging Face Token
 
@@ -211,6 +215,33 @@ MANUAL_RUNS = [
 RUN_FRESH_BASELINE = True
 ```
 
+For Q1/Q2, use:
+
+```python
+MANUAL_RUNS = [
+    {'rank': 16, 'component': 'default'},
+    {'rank': 64, 'component': 'default'},
+    {'rank': 256, 'component': 'default'},
+]
+RUN_FRESH_BASELINE = True
+```
+
+The saved notebook is currently configured for Q3:
+
+```python
+MANUAL_RUNS = [
+    {'rank': 16, 'component': 'default'},
+    {'rank': 16, 'component': '25%'},
+    {'rank': 16, 'component': '50%'},
+    {'rank': 16, 'component': 'bot'},
+]
+RUN_FRESH_BASELINE = False
+```
+
+`25%` and `50%` are starting positions in the sorted singular values.
+`bot` selects the last 16. Save each run's results before running another
+configuration, since the notebook writes to the same output directory.
+
 ### 4. Run the Main Pipeline
 
 Run the notebook cells in order on Kaggle.
@@ -233,6 +264,60 @@ You can reuse your HF_TOKEN created in finetune_q1-q3.ipynb by simply enabling i
 
 The code for Question 4 is separate from the main fine-tuning experiment, since it's independent from the datasets or the settings above.
 
+Enable Internet and the `HF_TOKEN` secret for the Q4 notebook. A GPU is recommended;
+the notebook also supports CPU SVD. Run all cells in order. It loads the original
+`meta-llama/Llama-3.2-1B` weights in FP32 and analyzes only the `q_proj` matrices in
+layers 0, 7, and 15.
+
+SVD and energy accumulation use FP64. CUDA uses the QR-based `gesvd` driver;
+each layer checks that its full squared singular-value sum matches the original
+matrix's Frobenius energy before producing ranks or charts.
+
+Cumulative energy is calculated from squared singular values, using the complete
+spectrum as the denominator. The minimum rank for 50% energy is calculated over
+that complete spectrum; only the figures are limited to the first 200 values.
+
+Outputs are saved in `/kaggle/working/Assignment1_Q4`:
+
+- `q4_summary.csv` and `q4_summary.json`: minimum ranks and energy statistics.
+- `layer_{layer}_q_proj_spectrum.csv`: full singular-value and cumulative-energy data.
+- `layer_{layer}_cumulative_energy.png` and `layer_{layer}_singular_values.png`:
+  six figures in total, saved at 300 dpi with common scales across layers.
+- `q4_observations.md`, `q4_metadata.json`, and `run_progress.log`:
+  measured observations, reproducibility information, and execution progress.
+
+The notebook does not save model checkpoints. Local runs write to `output/q4`.
+
+Upload `finetune_q4.ipynb` to Kaggle, enable the secret, and use
+**Save Version > Save & Run All**. The saved notebook includes the completed
+Q4 outputs and six charts.
+
+## Running the results analysis
+
+Open `results_analysis.ipynb` from the repository root and run the cells in order.
+This only reads saved results; it needs no GPU, Hugging Face token, or model download.
+
+For a local Jupyter environment:
+
+```bash
+python -m pip install pandas matplotlib ipykernel jupyterlab
+python -m jupyterlab
+```
+
+The input files are included with their original folder paths:
+
+- `output/baseline/results.zip`: original-model results.
+- `output/v2/benchmark_results.csv`: Q1/Q2 ranks 16, 64, and 256.
+- `output/v3/Assignment1/benchmark_results.csv`: all four Q3 settings.
+- `output/q4/v4/Assignment1_Q4/q4_summary.csv`: Q4 minimum ranks.
+- `output/q4/v4/Assignment1_Q4/layer_{0,7,15}_q_proj_spectrum.csv`: full Q4 spectra.
+
+The analysis writes tables and PNGs to `output/analysis/`. It uses 1,000 evaluated
+questions per dataset and seed 42. Unparsed answers count as incorrect. Q2 uses
+the v2 training times; the rank-16 time in the separate Q3 run is different.
+
+Model checkpoints, prediction files, and temporary files are excluded from Git.
+
 ## Acknowledgement
 
 This project is adapted from the official [PiSSA](https://github.com/MuLabPKU/PiSSA) implementation by Meng et al. The implementation was modified for alternative singular-subspace initialization, custom experiment settings, and robust GSM8K/MATH evaluation.
@@ -244,4 +329,3 @@ This project is adapted from the official [PiSSA](https://github.com/MuLabPKU/Pi
 
 2. MuLabPKU. **PiSSA: Official Implementation.**  
    https://github.com/MuLabPKU/PiSSA
-
